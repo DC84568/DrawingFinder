@@ -1,0 +1,18 @@
+# Build output
+bin
+obj
+
+# Visual Studio
+.vs
+
+# VS Code
+.vscode
+
+# Publish output
+publish
+Release
+Debug
+
+# User files
+.user
+.suo

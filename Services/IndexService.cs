@@ -8,17 +8,33 @@ public static class IndexService
     {
         var results = new List<DrawingRecord>();
 
+        foreach (string folder in Directory.GetDirectories(
+            rootFolder,
+            "*",
+            SearchOption.TopDirectoryOnly))
+        {
+            results.Add(new DrawingRecord
+            {
+                FileName = "📁  " + Path.GetFileName(folder),
+                FullPath = folder,
+                SearchName = Normalize(Path.GetFileName(folder)),
+                ModifiedDate = Directory.GetLastWriteTime(folder),
+                IsFolder = true
+            });
+        }
+
         foreach (string file in Directory.GetFiles(
             rootFolder,
-            "*.pdf",
-            SearchOption.AllDirectories))
+            "*",
+            SearchOption.TopDirectoryOnly))
         {
             results.Add(new DrawingRecord
             {
                 FileName = Path.GetFileName(file),
                 FullPath = file,
                 SearchName = Normalize(Path.GetFileNameWithoutExtension(file)),
-                ModifiedDate = File.GetLastWriteTime(file)
+                ModifiedDate = File.GetLastWriteTime(file),
+                IsFolder = false
             });
         }
 

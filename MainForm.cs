@@ -19,12 +19,15 @@ public partial class MainForm : Form
     private StatusStrip statusStrip;
     private ToolStripStatusLabel lblStatus;
     private string _rootFolder = string.Empty;
-    private bool _usingServerFolder;
+  //  private bool _usingServerFolder;
+    private TextBox txtFolder;
+    private Label lblFolder;
+    private Button btnUp;
     
     public MainForm()
     {
         InitializeComponent();
-        this.Text = $"Drawing Finder v1.0"; 
+        this.Text = $"Drawing Finder v1.1"; 
 
         string iconPath = Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory,
@@ -42,31 +45,56 @@ public partial class MainForm : Form
         Height = 900;
         MinimumSize = new Size(400, 400);
 
+        lblFolder = new Label
+        {
+            Text = "Folder:",
+            AutoSize = true,
+            Location = new Point(5, 8)
+        };
+
+        txtFolder = new TextBox
+        {
+            Location = new Point(60, 4),
+            Width = 565,
+        };
+        txtFolder.KeyDown += TxtFolder_KeyDown;
+        
+        btnUp = new Button
+        {
+            Text = "Up",
+            Location = new Point(630, 3),
+            Width = 50,
+            Height = 23,
+
+        };
+        this.Resize += MainForm_Resize;
+
+        btnUp.Click += BtnUp_Click;
+
         pnlSearch = new Panel
         {
             Dock = DockStyle.Top,
-            Height = 28
+            Height = 58
         };
 
         lblSearch = new Label
         {
             Text = "Search:",
             AutoSize = true,
-            Location = new Point(5, 8)
+            Location = new Point(5, 35)
         };
 
         txtSearch = new TextBox
         {
-            Location = new Point(60, 4),
-            Width = 606
+            Location = new Point(60, 31),
+            Width = 606,
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
         };
 
         txtSearch.TextChanged += TxtSearch_TextChanged;
 
-        pnlSearch.Controls.Add(lblSearch);
-        pnlSearch.Controls.Add(txtSearch);
 
-        Controls.Add(pnlSearch);
+
  
         dgvResults = new DataGridView
         {
@@ -94,6 +122,15 @@ public partial class MainForm : Form
         lblStatus = new ToolStripStatusLabel();
         statusStrip.Items.Add(lblStatus);
         Controls.Add(statusStrip);
+
+        pnlSearch.Controls.Add(lblFolder);
+        pnlSearch.Controls.Add(txtFolder);
+        pnlSearch.Controls.Add(btnUp);
+
+        pnlSearch.Controls.Add(lblSearch);
+        pnlSearch.Controls.Add(txtSearch);
+
+        Controls.Add(pnlSearch);
 
         rightClickMenu = new ContextMenuStrip();
 
@@ -138,12 +175,12 @@ public partial class MainForm : Form
         if (Directory.Exists(serverFolder))
         {
             _rootFolder = serverFolder;
-            _usingServerFolder = true;
+     //       _usingServerFolder = true;
         }
         else if (Directory.Exists(sharePointFolder))
         {
             _rootFolder = sharePointFolder;
-            _usingServerFolder = false;
+     //       _usingServerFolder = false;
         }
         else
         {
@@ -155,6 +192,7 @@ public partial class MainForm : Form
         }
 
         _allFiles = IndexService.BuildIndex(_rootFolder);
+        txtFolder.Text = _rootFolder;
 
         dgvResults.CellDoubleClick += DgvResults_CellDoubleClick;
         
@@ -190,10 +228,10 @@ public partial class MainForm : Form
         string search = txtSearch.Text.ToUpper();
 
         var results = _allFiles
-            .Where(x => MatchesSearch(
-                x.FileName.ToUpper(),
-                search))
-            .OrderByDescending(x => x.ModifiedDate)
+            .Where(x =>
+                MatchesSearch(x.SearchName, search))
+            .OrderByDescending(x => x.IsFolder)
+            .ThenBy(x => x.FileName)
             .ToList();
 
         dgvResults.DataSource = results;
@@ -210,12 +248,24 @@ public partial class MainForm : Form
         var drawing =
             (DrawingRecord)dgvResults.Rows[e.RowIndex].DataBoundItem;
 
+        if (drawing.IsFolder)
+        {
+            _rootFolder = drawing.FullPath;
+
+            txtFolder.Text = _rootFolder;
+
+            RefreshFiles_Click(null, EventArgs.Empty);
+
+            return;
+        }
+
         Process.Start(new ProcessStartInfo
         {
             FileName = drawing.FullPath,
             UseShellExecute = true
         });
-    }    
+    }
+
     private void DgvResults_MouseDown(
         object? sender,
         MouseEventArgs e)
@@ -466,6 +516,7 @@ public partial class MainForm : Form
         try
         {
             _allFiles = IndexService.BuildIndex(_rootFolder);
+            txtFolder.Text = _rootFolder;
 
                 dgvResults.DataSource = _allFiles
                 .OrderByDescending(x => x.ModifiedDate)
@@ -515,6 +566,8 @@ public partial class MainForm : Form
                 dgvResults.Columns["FileName"].FillWeight = 82;
             if (dgvResults.Columns["ModifiedDate"] != null)
                 dgvResults.Columns["ModifiedDate"].FillWeight = 18;
+            if (dgvResults.Columns["IsFolder"] != null)
+                dgvResults.Columns["IsFolder"].Visible = false;
         }
         catch (Exception ex)
         {
@@ -536,10 +589,9 @@ public partial class MainForm : Form
         }
 
         lblStatus.Text =
-            $"{_allFiles.Count:N0} drawings indexed | " +
+            $"{_allFiles.Count:N0} items | " +
             $"{displayedCount:N0} matches | " +
-            $"{selectedCount:N0} selected | " +
-            $"{(_usingServerFolder ? "PDF Exports" : "SharePoint")}";
+            $"{selectedCount:N0} selected | ";
     }
     private void DgvResults_SelectionChanged(
         object? sender,
@@ -649,5 +701,51 @@ public partial class MainForm : Form
 
         return true;
     }
+    private void BtnUp_Click(
+        object? sender,
+        EventArgs e)
+        {
+            var parent = Directory.GetParent(_rootFolder);
 
+            if (parent == null)
+                return;
+
+            _rootFolder = parent.FullName;
+
+            RefreshFiles_Click(null, EventArgs.Empty);
+        }
+
+    private void MainForm_Resize(
+        object? sender,
+        EventArgs e)
+    {
+        btnUp.Left = pnlSearch.ClientSize.Width - btnUp.Width - 5;
+
+        txtFolder.Width = btnUp.Left - txtFolder.Left - 5;
+    }
+    private void TxtFolder_KeyDown(
+        object? sender,
+        KeyEventArgs e)
+    {
+        if (e.KeyCode != Keys.Enter)
+            return;
+
+        e.Handled = true;
+        e.SuppressKeyPress = true;
+
+        if (!Directory.Exists(txtFolder.Text))
+        {
+            MessageBox.Show(
+                "Folder not found.",
+                "Drawing Finder",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+
+            return;
+        }
+
+        _rootFolder = txtFolder.Text;
+
+        RefreshFiles_Click(null, EventArgs.Empty);
+    }
 }

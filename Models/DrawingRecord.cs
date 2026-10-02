@@ -6,4 +6,5 @@ public class DrawingRecord
     public string SearchName { get; set; } = "";
     public string FullPath { get; set; } = "";
     public DateTime ModifiedDate { get; set; }
+    public bool IsFolder { get; set; }
 }

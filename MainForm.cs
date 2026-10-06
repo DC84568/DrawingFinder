@@ -68,7 +68,7 @@ public partial class MainForm : Form
             Text = "Up",
             Location = new Point(660, 3),
             Width = 50,
-            Height = 29,
+            Height = 26,
         };
         this.Resize += MainForm_Resize;
 
@@ -202,7 +202,7 @@ public partial class MainForm : Form
             CopyFilename_Click);
 
         rightClickMenu.Items.Add(
-            "Open PDF(s)",
+            "Open",
             null,
             OpenPdf_Click);  
         
@@ -307,7 +307,7 @@ public partial class MainForm : Form
                     x.FileName.ToUpper(),
                     search))
             .OrderByDescending(x => x.IsFolder)
-            .ThenBy(x => x.FileName)
+            .ThenByDescending(x => x.ModifiedDate)
             .ToList();
 
 
@@ -925,6 +925,14 @@ public partial class MainForm : Form
 
         if (string.IsNullOrWhiteSpace(name))
             return;
+        
+        if (_favoriteMap.ContainsKey(name))
+        {
+            MessageBox.Show(
+                "A favorite with that name already exists.");
+
+            return;
+        }
 
         _settings.FavoriteFolders.Add(
             new FavoriteFolder

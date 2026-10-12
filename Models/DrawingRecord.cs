@@ -7,4 +7,5 @@ public class DrawingRecord
     public string FullPath { get; set; } = "";
     public DateTime ModifiedDate { get; set; }
     public bool IsFolder { get; set; }
+    public string ArenaStatus { get; set; } = "";
 }

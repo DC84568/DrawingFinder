@@ -28,10 +28,17 @@ public partial class MainForm : Form
     private Label lblFavorite;
     private Dictionary<string, string> _favoriteMap = new();
     
+    private readonly Dictionary<string, ArenaFileInfo> _arenaFiles =
+    new(StringComparer.OrdinalIgnoreCase);
     public MainForm()
     {
         InitializeComponent();
         this.Text = $"Drawing Finder v1.1"; 
+
+        LoadArenaExport(
+            Path.Combine(
+                Application.StartupPath,
+                "Arena Drawing Export.csv"));        
        
         string iconPath = Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory,
@@ -268,6 +275,8 @@ public partial class MainForm : Form
         _allFiles = IndexService.BuildIndex(_rootFolder);
         txtFolder.Text = _rootFolder;
 
+        ApplyArenaStatuses();
+
         dgvResults.CellDoubleClick += DgvResults_CellDoubleClick;
         
         dgvResults.DataSource = _allFiles
@@ -288,6 +297,15 @@ public partial class MainForm : Form
         {
             dgvResults.Columns["FullPath"].Visible = false;
         }
+
+// string fileName = Path.GetFileName(file.FullName);
+
+// string arenaStatus = "";
+
+// if (_arenaFiles.TryGetValue(fileName, out ArenaFileInfo? arenaInfo))
+// {
+//     arenaStatus = arenaInfo.Status;
+// }
 
         dgvResults.KeyDown += DgvResults_KeyDown;
         dgvResults.MouseDown += DgvResults_MouseDown;
@@ -595,6 +613,8 @@ public partial class MainForm : Form
 
             txtFolder.Text = _rootFolder;
 
+            ApplyArenaStatuses();
+
             dgvResults.DataSource = _allFiles
                 .OrderByDescending(x => x.ModifiedDate)
                 .ThenBy(x => x.FileName)
@@ -640,9 +660,12 @@ public partial class MainForm : Form
                 dgvResults.Columns["FullPath"].Visible = false;
 
             if (dgvResults.Columns["FileName"] != null)
-                dgvResults.Columns["FileName"].FillWeight = 80;
+                dgvResults.Columns["FileName"].FillWeight = 68;
             if (dgvResults.Columns["ModifiedDate"] != null)
-                dgvResults.Columns["ModifiedDate"].FillWeight = 20;
+                dgvResults.Columns["ModifiedDate"].FillWeight = 17;
+            if (dgvResults.Columns["ArenaStatus"] != null)
+                dgvResults.Columns["ArenaStatus"].FillWeight = 15;
+
             if (dgvResults.Columns["IsFolder"] != null)
                 dgvResults.Columns["IsFolder"].Visible = false;
         }
@@ -1005,5 +1028,132 @@ public partial class MainForm : Form
         EventArgs e)
     {
         dgvResults.ClearSelection();
+    }
+    private void LoadArenaExport(string csvPath)
+    {
+        _arenaFiles.Clear();
+
+        string currentItemNumber = "";
+        string currentStatus = "";
+
+        if (!File.Exists(csvPath))
+            return;
+
+        var lines = File.ReadAllLines(csvPath);
+
+        if (lines.Length < 2)
+            return;
+
+        string[] headers = lines[0].Split(',');
+
+        int itemNumberCol = Array.FindIndex(headers,
+            h => h.Trim().Equals("item number", StringComparison.OrdinalIgnoreCase));
+
+        int itemPhaseCol = Array.FindIndex(headers,
+            h => h.Trim().Equals("item phase", StringComparison.OrdinalIgnoreCase));
+
+        int fileNameCol = Array.FindIndex(headers,
+            h => h.Trim().Equals("file name", StringComparison.OrdinalIgnoreCase));
+
+        int fileActiveCol = Array.FindIndex(headers,
+            h => h.Trim().Equals("file active",
+                StringComparison.OrdinalIgnoreCase));            
+
+        if (itemNumberCol < 0 || itemPhaseCol < 0 || fileNameCol < 0)
+            return;
+
+        for (int i = 1; i < lines.Length; i++)
+        {
+            string[] fields = ParseCsvLine(lines[i]);
+
+            if (fields.Length <= Math.Max(fileNameCol,
+                Math.Max(itemNumberCol, itemPhaseCol)))
+                continue;
+
+            string fileName = fields[fileNameCol].Trim();
+            string itemNumber = fields[itemNumberCol].Trim();
+            string status = fields[itemPhaseCol].Trim();
+
+if (!string.IsNullOrWhiteSpace(status))
+{
+    currentStatus = status;
+}
+
+if (!string.IsNullOrWhiteSpace(itemNumber))
+{
+    currentItemNumber = itemNumber;
+}
+
+            if (string.IsNullOrWhiteSpace(fileName))
+                continue;
+
+            if (!fileName.EndsWith(".pdf",
+                StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            bool fileActive = false;
+
+            if (fileActiveCol >= 0)
+            {
+                fileActive = fields[fileActiveCol]
+                    .Trim()
+                    .Equals("Yes", StringComparison.OrdinalIgnoreCase);
+            }
+
+            _arenaFiles[fileName] = new ArenaFileInfo
+            {
+                ItemNumber = currentItemNumber,
+                Status = currentStatus,
+                FileActive = fileActive
+            };
+        }
+    }
+    private static string[] ParseCsvLine(string line)
+    {
+        var result = new List<string>();
+        var current = new StringBuilder();
+        bool inQuotes = false;
+
+        foreach (char c in line)
+        {
+            if (c == '"')
+            {
+                inQuotes = !inQuotes;
+            }
+            else if (c == ',' && !inQuotes)
+            {
+                result.Add(current.ToString());
+                current.Clear();
+            }
+            else
+            {
+                current.Append(c);
+            }
+        }
+
+        result.Add(current.ToString());
+
+        return result.ToArray();
+    }
+    private void ApplyArenaStatuses()
+    {
+        foreach (var drawing in _allFiles)
+        {
+            if (_arenaFiles.TryGetValue(drawing.FileName, out var arenaInfo))
+            {
+                if (arenaInfo.FileActive)
+                {
+                    drawing.ArenaStatus = arenaInfo.Status;
+                }
+                else
+                {
+                    drawing.ArenaStatus = "Superseded";
+                }
+            }
+            else
+            {
+                drawing.ArenaStatus = "Not in Arena";
+            }
+        }
     }
 }

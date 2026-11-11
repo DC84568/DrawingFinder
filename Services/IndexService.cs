@@ -28,6 +28,16 @@ public static class IndexService
             "*",
             SearchOption.TopDirectoryOnly))
         {
+
+string fileName = Path.GetFileName(file);
+
+if (fileName.Equals("desktop.ini",
+        StringComparison.OrdinalIgnoreCase) ||
+    fileName.Equals("Thumbs.db",
+        StringComparison.OrdinalIgnoreCase))
+{
+    continue;
+}            
             results.Add(new DrawingRecord
             {
                 FileName = Path.GetFileName(file),

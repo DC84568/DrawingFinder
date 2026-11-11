@@ -8,4 +8,5 @@ public class DrawingRecord
     public DateTime ModifiedDate { get; set; }
     public bool IsFolder { get; set; }
     public string ArenaStatus { get; set; } = "";
+    public string ArenaItem { get; set; } = "";
 }

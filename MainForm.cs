@@ -27,18 +27,45 @@ public partial class MainForm : Form
     private ComboBox cboFavorites;
     private Label lblFavorite;
     private Dictionary<string, string> _favoriteMap = new();
-    
+    private CheckBox chkArenaOnly;   
     private readonly Dictionary<string, ArenaFileInfo> _arenaFiles =
     new(StringComparer.OrdinalIgnoreCase);
+    private DateTime _arenaExportDate;
+    private string _sortColumn = "ModifiedDate";
+    private bool _sortAscending = false;
+
     public MainForm()
     {
         InitializeComponent();
-        this.Text = $"Drawing Finder v1.1"; 
+        this.Text = $"Drawing Finder v1.2"; 
 
-        LoadArenaExport(
-            Path.Combine(
-                Application.StartupPath,
-                "Arena Drawing Export.csv"));        
+        string arenaFolder =
+            @"\\sto-srv-fs2\LQDATA\LASER QUANTUM\Design Files\CAD files\CAD file exports\Scripts\Arena Export";
+
+        string? arenaCsvPath = null;
+
+        if (Directory.Exists(arenaFolder))
+        {
+            arenaCsvPath = Directory
+                .GetFiles(arenaFolder, "*.csv")
+                .OrderByDescending(File.GetLastWriteTime)
+                .FirstOrDefault();
+        }
+
+        if (!string.IsNullOrEmpty(arenaCsvPath))
+        {
+            LoadArenaExport(arenaCsvPath);
+
+            _arenaExportDate = File.GetLastWriteTime(arenaCsvPath);
+        }
+        else
+        {
+            MessageBox.Show(
+                $"No Arena export CSV files were found in:\n\n{arenaFolder}",
+                "Arena Export Missing",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
        
         string iconPath = Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory,
@@ -52,7 +79,7 @@ public partial class MainForm : Form
 
         StartPosition = FormStartPosition.Manual;
         Location = new Point(20, 20);
-        Width = 730;
+        Width = 900;
         Height = 900;
         MinimumSize = new Size(400, 400);
 
@@ -93,8 +120,16 @@ public partial class MainForm : Form
             Location = new Point(70, 31),
             Width = 250,
             DropDownStyle = ComboBoxStyle.DropDownList,
-            // TabStop = false
         };        
+
+        chkArenaOnly = new CheckBox();
+        chkArenaOnly.Text = "Arena Drawings Only";
+        chkArenaOnly.AutoSize = true;
+        chkArenaOnly.CheckedChanged += ChkArenaOnly_CheckedChanged;
+
+        this.Controls.Add(chkArenaOnly);    
+
+        chkArenaOnly.Location = new Point(330, 34);    
 
         LoadSettings();
 
@@ -177,6 +212,11 @@ public partial class MainForm : Form
             new Padding(8, 0, 0, 0);
         dgvResults.SelectionChanged += DgvResults_SelectionChanged;
 
+        dgvResults.ColumnHeaderMouseClick += DgvResults_ColumnHeaderMouseClick;
+
+        dgvResults.ClipboardCopyMode =
+            DataGridViewClipboardCopyMode.EnableWithoutHeaderText;
+
         Controls.Add(dgvResults);
 
         statusStrip = new StatusStrip();
@@ -207,6 +247,11 @@ public partial class MainForm : Form
             "Copy Filename(s)",
             null,
             CopyFilename_Click);
+
+        rightClickMenu.Items.Add(
+            "Copy Part code(s)",
+            null,
+            CopyArenaItem_Click);
 
         rightClickMenu.Items.Add(
             "Open",
@@ -241,8 +286,8 @@ public partial class MainForm : Form
         dgvResults.ContextMenuStrip = rightClickMenu;
 
         string serverFolder =
-            @"L:\LASER QUANTUM\Design Files\CAD files\CAD file exports\PDFS";
-
+            // @"L:\LASER QUANTUM\Design Files\CAD files\CAD file exports\PDFS";
+            @"\\sto-srv-fs2\LQDATA\LASER QUANTUM\Design Files\CAD files\CAD file exports\PDFS";
         string sharePointFolder = Path.Combine(
             Environment.GetFolderPath(
                 Environment.SpecialFolder.UserProfile),
@@ -298,22 +343,16 @@ public partial class MainForm : Form
             dgvResults.Columns["FullPath"].Visible = false;
         }
 
-// string fileName = Path.GetFileName(file.FullName);
-
-// string arenaStatus = "";
-
-// if (_arenaFiles.TryGetValue(fileName, out ArenaFileInfo? arenaInfo))
-// {
-//     arenaStatus = arenaInfo.Status;
-// }
 
         dgvResults.KeyDown += DgvResults_KeyDown;
         dgvResults.MouseDown += DgvResults_MouseDown;
         dgvResults.MouseMove += DgvResults_MouseMove;
         dgvResults.MouseUp += DgvResults_MouseUp;
         dgvResults.CellMouseDown += DgvResults_CellMouseDown;    
-        
+        dgvResults.CellFormatting += DgvResults_CellFormatting;
+
         this.Shown += MainForm_Shown;
+        
     }
     private void TxtSearch_TextChanged(object? sender, EventArgs e)
     {
@@ -323,20 +362,42 @@ public partial class MainForm : Form
             .Where(x =>
                 MatchesSearch(
                     x.FileName.ToUpper(),
-                    search))
-            .OrderByDescending(x => x.IsFolder)
-            .ThenByDescending(x => x.ModifiedDate)
-            .ToList();
+                    search));
 
+        if (chkArenaOnly.Checked)
+        {
+            results = results
+                .Where(x => x.ArenaStatus != "Not in Arena"
+                        && x.ArenaStatus != "N/A");
+        }
 
-        dgvResults.DataSource = results;
+        results = _sortColumn switch
+        {
+            "FileName" => _sortAscending
+                ? results.OrderBy(x => x.FileName)
+                : results.OrderByDescending(x => x.FileName),
+
+            "ArenaItem" => _sortAscending
+                ? results.OrderBy(x => x.ArenaItem)
+                : results.OrderByDescending(x => x.ArenaItem),
+
+            "ArenaStatus" => _sortAscending
+                ? results.OrderBy(x => x.ArenaStatus)
+                : results.OrderByDescending(x => x.ArenaStatus),
+
+            _ => _sortAscending
+                ? results.OrderBy(x => x.ModifiedDate)
+                : results.OrderByDescending(x => x.ModifiedDate)
+        };
+
+        dgvResults.DataSource = results.ToList();
 
         dgvResults.ClearSelection();
         dgvResults.CurrentCell = null;
 
         FormatGrid();
         UpdateStatusBar();
-    }
+    } 
     private void DgvResults_CellDoubleClick(
         object? sender,
         DataGridViewCellEventArgs e)
@@ -562,6 +623,17 @@ public partial class MainForm : Form
             }
          
         }
+        // if (e.Control && e.KeyCode == Keys.C)
+        // {
+        //     if (dgvResults.CurrentCell?.Value != null)
+        //     {
+        //         Clipboard.SetText(
+        //             dgvResults.CurrentCell.Value.ToString() ?? "");
+        //     }
+
+        //     e.Handled = true;
+        //     e.SuppressKeyPress = true;
+        // }
     }
     protected override bool ProcessCmdKey(
         ref Message msg,
@@ -660,20 +732,50 @@ public partial class MainForm : Form
                 dgvResults.Columns["FullPath"].Visible = false;
 
             if (dgvResults.Columns["FileName"] != null)
-                dgvResults.Columns["FileName"].FillWeight = 68;
+                dgvResults.Columns["FileName"].FillWeight = 45;
+
             if (dgvResults.Columns["ModifiedDate"] != null)
                 dgvResults.Columns["ModifiedDate"].FillWeight = 17;
+
+            if (dgvResults.Columns["ArenaItem"] != null)
+                dgvResults.Columns["ArenaItem"].FillWeight = 23;
+
             if (dgvResults.Columns["ArenaStatus"] != null)
                 dgvResults.Columns["ArenaStatus"].FillWeight = 15;
 
             if (dgvResults.Columns["IsFolder"] != null)
                 dgvResults.Columns["IsFolder"].Visible = false;
+
+
+            if (dgvResults.Columns["FileName"] != null)
+                dgvResults.Columns["FileName"].HeaderText = "File Name";
+
+            if (dgvResults.Columns["ModifiedDate"] != null)
+                dgvResults.Columns["ModifiedDate"].HeaderText = "Modified";
+
+            if (dgvResults.Columns["ArenaItem"] != null)
+                dgvResults.Columns["ArenaItem"].HeaderText = "Arena Item";
+
+            if (dgvResults.Columns["ArenaStatus"] != null)
+                dgvResults.Columns["ArenaStatus"].HeaderText = "Arena Status";       
+
+            dgvResults.EnableHeadersVisualStyles = false;
+
+            dgvResults.ColumnHeadersDefaultCellStyle.BackColor =
+                SystemColors.Control;
+
+            dgvResults.ColumnHeadersDefaultCellStyle.Font =
+                new Font(dgvResults.Font, FontStyle.Bold);
+
+            dgvResults.Columns["FileName"].DisplayIndex = 0;
+            dgvResults.Columns["ModifiedDate"].DisplayIndex = 1;
+            dgvResults.Columns["ArenaItem"].DisplayIndex = 2;
+            dgvResults.Columns["ArenaStatus"].DisplayIndex = 3;
         }
         catch (Exception ex)
         {
             MessageBox.Show(ex.ToString());
         }
-
     }
     private void UpdateStatusBar()
     {
@@ -690,8 +792,11 @@ public partial class MainForm : Form
 
         lblStatus.Text =
             $"{_allFiles.Count:N0} items | " +
-            $"{displayedCount:N0} matches | " +
-            $"{selectedCount:N0} selected | ";
+            $"{dgvResults.Rows.Count:N0} matches | " +
+            // $"{displayedCount:N0} matches | " +
+            $"{selectedCount:N0} selected | " +
+            $"Arena Export: {_arenaExportDate:dd/MM/yyyy HH:mm}";
+            // $"Arena: {_arenaFiles.Count:N0}";
     }
     private void DgvResults_SelectionChanged(
         object? sender,
@@ -1001,28 +1106,7 @@ public partial class MainForm : Form
 
         txtSearch.Focus();
     }
-    // private void TxtSearch_KeyDown(
-    //     object? sender,
-    //     KeyEventArgs e)
-    // {
-    //     if (e.KeyCode == Keys.Down)
-    //     {
-    //         MessageBox.Show("Down pressed");
 
-    //         e.Handled = true;
-    //         e.SuppressKeyPress = true;
-
-    //         if (dgvResults.Rows.Count > 0)
-    //         {
-    //             dgvResults.Focus();
-
-    //             dgvResults.ClearSelection();
-    //             dgvResults.Rows[0].Selected = true;
-    //             dgvResults.CurrentCell =
-    //                 dgvResults.Rows[0].Cells[0];
-    //         }
-    //     }
-    // }
     private void TxtSearch_Enter(
         object? sender,
         EventArgs e)
@@ -1074,15 +1158,15 @@ public partial class MainForm : Form
             string itemNumber = fields[itemNumberCol].Trim();
             string status = fields[itemPhaseCol].Trim();
 
-if (!string.IsNullOrWhiteSpace(status))
-{
-    currentStatus = status;
-}
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                currentStatus = status;
+            }
 
-if (!string.IsNullOrWhiteSpace(itemNumber))
-{
-    currentItemNumber = itemNumber;
-}
+            if (!string.IsNullOrWhiteSpace(itemNumber))
+            {
+                currentItemNumber = itemNumber;
+            }
 
             if (string.IsNullOrWhiteSpace(fileName))
                 continue;
@@ -1098,6 +1182,7 @@ if (!string.IsNullOrWhiteSpace(itemNumber))
                 fileActive = fields[fileActiveCol]
                     .Trim()
                     .Equals("Yes", StringComparison.OrdinalIgnoreCase);
+            
             }
 
             _arenaFiles[fileName] = new ArenaFileInfo
@@ -1141,6 +1226,8 @@ if (!string.IsNullOrWhiteSpace(itemNumber))
         {
             if (_arenaFiles.TryGetValue(drawing.FileName, out var arenaInfo))
             {
+                drawing.ArenaItem = arenaInfo.ItemNumber;
+
                 if (arenaInfo.FileActive)
                 {
                     drawing.ArenaStatus = arenaInfo.Status;
@@ -1152,8 +1239,68 @@ if (!string.IsNullOrWhiteSpace(itemNumber))
             }
             else
             {
+                drawing.ArenaItem = "";
                 drawing.ArenaStatus = "Not in Arena";
             }
         }
     }
+    private void ChkArenaOnly_CheckedChanged(object? sender, EventArgs e)
+    {
+        TxtSearch_TextChanged(null, EventArgs.Empty);
+    }    
+    private void DgvResults_ColumnHeaderMouseClick(
+        object? sender,
+        DataGridViewCellMouseEventArgs e)
+    {
+        string columnName = dgvResults.Columns[e.ColumnIndex].DataPropertyName;
+
+        if (_sortColumn == columnName)
+        {
+            _sortAscending = !_sortAscending;
+        }
+        else
+        {
+            _sortColumn = columnName;
+            _sortAscending = true;
+        }
+
+        TxtSearch_TextChanged(null, EventArgs.Empty);
+    }
+    private void CopyArenaItem_Click(object? sender, EventArgs e)
+    {
+        var items = dgvResults.SelectedRows
+            .Cast<DataGridViewRow>()
+            .Select(r => r.Cells["ArenaItem"].Value?.ToString())
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Distinct()
+            .ToList();
+
+        if (items.Any())
+        {
+            Clipboard.SetText(string.Join(Environment.NewLine, items));
+        }
+    }
+private void DgvResults_CellFormatting(
+    object? sender,
+    DataGridViewCellFormattingEventArgs e)
+{
+    if (e.ColumnIndex != dgvResults.Columns["ArenaStatus"]?.Index)
+        return;
+
+    if (e.CellStyle == null)
+        return;
+
+    string status = e.Value?.ToString() ?? "";
+
+    switch (status)
+    {
+        case "In Production":
+            e.CellStyle.BackColor = Color.LightGreen;
+            break;
+
+        case "Superseded":
+            e.CellStyle.BackColor = Color.LightGray;
+            break;
+    }
+}
 }
